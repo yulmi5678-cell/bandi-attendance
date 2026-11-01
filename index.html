@@ -340,12 +340,12 @@
           <div class="hidden sm:block overflow-hidden border border-slate-200 rounded-2xl">
             <table class="w-full text-xs text-center border-collapse table-fixed">
               <colgroup>
+                <col style="width: 13%;">
+                <col style="width: 12%;">
+                <col style="width: 12%;">
+                <col style="width: 25%;">
                 <col style="width: 14%;">
-                <col style="width: 14%;">
-                <col style="width: 14%;">
-                <col style="width: 15%;">
-                <col style="width: 15%;">
-                <col style="width: 20%;">
+                <col style="width: 16%;">
                 <col style="width: 8%;">
               </colgroup>
               <thead>
@@ -1259,7 +1259,7 @@
             <td class="py-2 px-1 font-bold text-slate-800">${shortDate}</td>
             <td class="py-2 px-1 font-black text-slate-900">${rec.student}</td>
             <td class="py-2 px-1 text-slate-600 font-medium">${rec.worker}</td>
-            <td class="py-2 px-1 font-black text-slate-900">${buildTimeSelects(rec, 'px-1 py-0.5')}</td>
+            <td class="py-2 px-1 font-black text-slate-900 whitespace-nowrap">${buildTimeSelects(rec, 'px-0.5 py-0.5 text-xs')}</td>
             <td class="py-2 px-1 font-extrabold text-blue-700">${cumulativeStr}</td>
             <td class="py-1 px-1">
               <select onchange="onTablePayTypeDirectChange('${rec.id}', this.value, event)" onclick="event.stopPropagation()"
