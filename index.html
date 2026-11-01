@@ -135,8 +135,12 @@
           <div>
             <label class="block text-xs font-bold text-slate-600 mb-1.5">서비스 일자 & 요일</label>
             <div class="grid grid-cols-3 gap-2">
-              <input type="date" id="serviceDateInput" onchange="onDateChanged()" required
-                     class="col-span-2 w-full min-w-0 px-3 py-2.5 rounded-xl border-2 border-slate-200 focus:border-blue-500 font-bold text-slate-800 outline-none text-sm">
+              <input type="hidden" id="serviceDateInput">
+              <button type="button" id="serviceDateBtn" onclick="openCalendar()"
+                     class="col-span-2 w-full min-w-0 px-3 py-2.5 rounded-xl border-2 border-slate-200 bg-slate-100 font-bold text-slate-800 text-sm flex items-center justify-between">
+                <span id="serviceDateText">날짜 선택</span>
+                <i class="fa-solid fa-chevron-down text-xs text-slate-500"></i>
+              </button>
               <div id="serviceDayBadge" class="col-span-1 rounded-xl bg-slate-100 border border-slate-200 font-bold text-slate-700 flex items-center justify-center text-sm">
                 요일
               </div>
@@ -616,15 +620,146 @@
       if (!dateVal) return;
       const days = ['일', '월', '화', '수', '목', '금', '토'];
       const dayNum = new Date(dateVal).getDay();
+      const hol = getHoliday(dateVal);
+      const dateText = document.getElementById('serviceDateText');
+      if (dateText) dateText.textContent = dateVal.replace(/-/g, '. ') + '.';
       const dayBadge = document.getElementById('serviceDayBadge');
       if (dayBadge) {
-        dayBadge.textContent = `${days[dayNum]}요일`;
-        dayBadge.className = dayNum === 0 
+        if (hol) {
+          dayBadge.innerHTML = '<div class="text-center leading-tight"><div>' + days[dayNum] + '요일</div><div class="text-[11px] font-bold">' + hol + '</div></div>';
+        } else {
+          dayBadge.textContent = `${days[dayNum]}요일`;
+        }
+        dayBadge.className = (dayNum === 0 || hol)
           ? "col-span-1 rounded-xl bg-rose-50 border border-rose-200 font-black text-rose-600 flex items-center justify-center text-sm"
           : dayNum === 6 
             ? "col-span-1 rounded-xl bg-blue-50 border border-blue-200 font-black text-blue-600 flex items-center justify-center text-sm"
             : "col-span-1 rounded-xl bg-slate-100 border border-slate-200 font-bold text-slate-700 flex items-center justify-center text-sm";
       }
+    }
+
+    // ================= 공휴일 / 달력 =================
+    // 음력 기준 공휴일(설날, 추석, 부처님오신날) - 해마다 날짜가 바뀌어 여기에 추가해야 해요.
+    const LUNAR_HOLIDAYS = {
+      2026: { seol: '2026-02-17', chuseok: '2026-09-25', buddha: '2026-05-24' },
+      2027: { seol: '2027-02-07', chuseok: '2027-09-15', buddha: '2027-05-13' },
+      2028: { seol: '2028-01-26', chuseok: '2028-10-03', buddha: '2028-05-02' }
+    };
+    // 선거일 등 특별 공휴일
+    const SPECIAL_HOLIDAYS = { '2026-06-03': '지방선거일', '2028-04-12': '국회의원선거일' };
+
+    const _holidayCache = {};
+    function _addDays(iso, n) {
+      const d = new Date(iso + 'T00:00:00Z');
+      d.setUTCDate(d.getUTCDate() + n);
+      return d.toISOString().slice(0, 10);
+    }
+    function _dow(iso) { return new Date(iso + 'T00:00:00Z').getUTCDay(); }
+
+    function buildHolidays(y) {
+      const map = {};
+      const add = (d, name, rule) => {
+        if (!map[d]) map[d] = { names: [], rules: [] };
+        map[d].names.push(name);
+        map[d].rules.push(rule);
+      };
+      // rule: none=대체공휴일 없음 / weekend=토·일·겹침이면 대체 / sunday=일요일·겹침이면 대체
+      add(y + '-01-01', '신정', 'none');
+      add(y + '-03-01', '삼일절', 'weekend');
+      add(y + '-05-05', '어린이날', 'weekend');
+      add(y + '-06-06', '현충일', 'none');
+      add(y + '-08-15', '광복절', 'weekend');
+      add(y + '-10-03', '개천절', 'weekend');
+      add(y + '-10-09', '한글날', 'weekend');
+      add(y + '-12-25', '성탄절', 'weekend');
+      const L = LUNAR_HOLIDAYS[y];
+      if (L) {
+        add(_addDays(L.seol, -1), '설날 연휴', 'sunday');
+        add(L.seol, '설날', 'sunday');
+        add(_addDays(L.seol, 1), '설날 연휴', 'sunday');
+        add(_addDays(L.chuseok, -1), '추석 연휴', 'sunday');
+        add(L.chuseok, '추석', 'sunday');
+        add(_addDays(L.chuseok, 1), '추석 연휴', 'sunday');
+        add(L.buddha, '부처님오신날', 'weekend');
+      }
+      Object.keys(SPECIAL_HOLIDAYS).forEach(d => { if (d.startsWith(y + '-')) add(d, SPECIAL_HOLIDAYS[d], 'none'); });
+      // 대체공휴일 계산
+      Object.keys(map).sort().forEach(d => {
+        const e = map[d];
+        const w = _dow(d);
+        const hasWeekend = e.rules.includes('weekend');
+        const hasSunday = e.rules.includes('sunday');
+        const overlap = e.names.length > 1 && (hasWeekend || hasSunday);
+        const hit = ((w === 0 || w === 6) && hasWeekend) || (w === 0 && hasSunday) || overlap;
+        if (hit) {
+          let t = _addDays(d, 1);
+          while (_dow(t) === 0 || _dow(t) === 6 || map[t]) t = _addDays(t, 1);
+          add(t, '대체공휴일', 'none');
+        }
+      });
+      return map;
+    }
+
+    function getHoliday(iso) {
+      if (!iso) return null;
+      const y = parseInt(iso.slice(0, 4), 10);
+      if (!_holidayCache[y]) _holidayCache[y] = buildHolidays(y);
+      const e = _holidayCache[y][iso];
+      return e ? e.names.join(' · ') : null;
+    }
+
+    let calYear = 2026, calMonth = 0;
+    function openCalendar() {
+      const v = document.getElementById('serviceDateInput').value;
+      const base = v ? new Date(v + 'T00:00:00') : new Date();
+      calYear = base.getFullYear();
+      calMonth = base.getMonth();
+      renderCalendar();
+      document.getElementById('calendarModal').classList.remove('hidden');
+    }
+    function closeCalendar() { document.getElementById('calendarModal').classList.add('hidden'); }
+    function calShift(n) {
+      calMonth += n;
+      if (calMonth < 0) { calMonth = 11; calYear--; }
+      if (calMonth > 11) { calMonth = 0; calYear++; }
+      renderCalendar();
+    }
+    function calGoToday() {
+      const t = new Date();
+      calYear = t.getFullYear(); calMonth = t.getMonth();
+      calPick(calYear, calMonth, t.getDate());
+    }
+    function calPick(y, m, d) {
+      const iso = `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      document.getElementById('serviceDateInput').value = iso;
+      onDateChanged();
+      closeCalendar();
+    }
+    function renderCalendar() {
+      document.getElementById('calTitle').textContent = `${calYear}년 ${calMonth + 1}월`;
+      const first = new Date(calYear, calMonth, 1).getDay();
+      const last = new Date(calYear, calMonth + 1, 0).getDate();
+      const selected = document.getElementById('serviceDateInput').value;
+      const t = new Date();
+      const todayIso = `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`;
+      let html = '';
+      for (let i = 0; i < first; i++) html += '<div></div>';
+      const holLines = [];
+      for (let d = 1; d <= last; d++) {
+        const iso = `${calYear}-${String(calMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+        const w = (first + d - 1) % 7;
+        const hol = getHoliday(iso);
+        if (hol) holLines.push(`<div><span class="font-black text-rose-600">${calMonth + 1}/${d}</span> ${hol}</div>`);
+        let cls = 'h-11 w-11 mx-auto rounded-full text-base font-medium flex items-center justify-center ';
+        if (iso === selected) cls += 'bg-blue-600 text-white font-bold ';
+        else {
+          cls += (w === 0 || hol) ? 'text-rose-600 ' : (w === 6 ? 'text-blue-600 ' : 'text-slate-800 ');
+        }
+        if (iso === todayIso && iso !== selected) cls += 'ring-2 ring-emerald-400 ';
+        html += `<button type="button" onclick="calPick(${calYear},${calMonth},${d})" class="${cls}">${d}</button>`;
+      }
+      document.getElementById('calGrid').innerHTML = html;
+      document.getElementById('calHolidayList').innerHTML = holLines.join('');
     }
 
     function resetFormToToday() {
@@ -873,6 +1008,77 @@
       showToast(`${rec.student} 결제구분이 [${newPayType}]로 변경되었습니다.`);
     }
 
+    // ===== 목록에서 시간 드롭다운 수정 =====
+    function buildTimeSelects(rec, pad) {
+      const total = parseMinutesFromText(rec.time);
+      const h = Math.floor(total / 60), m = total % 60;
+      const cls = `${pad} text-slate-900 font-black rounded-lg bg-slate-100 border border-slate-300 outline-none`;
+      let hOpts = '';
+      for (let i = 0; i <= Math.max(12, h); i++) hOpts += `<option value="${i}" ${i === h ? 'selected' : ''}>${i}시간</option>`;
+      const mins = [0, 30];
+      if (!mins.includes(m)) mins.push(m);
+      mins.sort((x, y) => x - y);
+      const mOpts = mins.map(v => `<option value="${v}" ${v === m ? 'selected' : ''}>${String(v).padStart(2, '0')}분</option>`).join('');
+      const id = rec.id;
+      return `<span class="inline-flex items-center gap-1" onclick="event.stopPropagation()">` +
+        `<select onchange="onTableTimeDirectChange('${id}', event)" class="${cls}">${hOpts}</select>` +
+        `<select onchange="onTableTimeDirectChange('${id}', event)" class="${cls}">${mOpts}</select></span>`;
+    }
+    function onTableTimeDirectChange(recordId, event) {
+      if (event) event.stopPropagation();
+      const rec = attendanceRecords.find(r => r.id === recordId);
+      if (!rec) return;
+      const box = event.target.closest('span');
+      const sels = box.querySelectorAll('select');
+      const h = parseInt(sels[0].value, 10);
+      const m = parseInt(sels[1].value, 10);
+      if (h === 0 && m === 0) { showToast('시간은 0이 될 수 없어요.'); renderRecordsList(); return; }
+      rec.time = (h > 0 && m > 0) ? `${h}시간 ${m}분` : (h > 0 ? `${h}시간` : `${m}분`);
+      saveAllDataToLocal();
+      renderRecordsList();
+      showToast(`${rec.student} 시간이 [${rec.time}]으로 변경되었습니다.`);
+    }
+
+    // ===== (예비) 시간 수정 창 =====
+    let timeEditRecordId = null;
+    function openTimeEdit(recordId, event) {
+      if (event) event.stopPropagation();
+      const rec = attendanceRecords.find(r => r.id === recordId);
+      if (!rec) return;
+      timeEditRecordId = recordId;
+      const total = parseMinutesFromText(rec.time);
+      const h = Math.floor(total / 60);
+      const m = total % 60;
+      const hSel = document.getElementById('timeEditHours');
+      let hOpts = '';
+      for (let i = 0; i <= Math.max(16, h); i++) hOpts += `<option value="${i}">${i}시간</option>`;
+      hSel.innerHTML = hOpts;
+      hSel.value = String(h);
+      const mSel = document.getElementById('timeEditMinutes');
+      let mOpts = '<option value="0">00분</option><option value="30">30분</option>';
+      if (m !== 0 && m !== 30) mOpts += `<option value="${m}">${m}분</option>`;
+      mSel.innerHTML = mOpts;
+      mSel.value = String(m);
+      document.getElementById('timeEditTitle').textContent = `${rec.date} · ${rec.student}`;
+      document.getElementById('timeEditModal').classList.remove('hidden');
+    }
+    function closeTimeEdit() {
+      timeEditRecordId = null;
+      document.getElementById('timeEditModal').classList.add('hidden');
+    }
+    function saveTimeEdit() {
+      const rec = attendanceRecords.find(r => r.id === timeEditRecordId);
+      if (!rec) { closeTimeEdit(); return; }
+      const h = parseInt(document.getElementById('timeEditHours').value || '0', 10);
+      const m = parseInt(document.getElementById('timeEditMinutes').value || '0', 10);
+      if (h === 0 && m === 0) { showToast('시간을 선택해주세요.'); return; }
+      rec.time = (h > 0 && m > 0) ? `${h}시간 ${m}분` : (h > 0 ? `${h}시간` : `${m}분`);
+      saveAllDataToLocal();
+      renderRecordsList();
+      closeTimeEdit();
+      showToast(`${rec.student} 시간이 [${rec.time}]으로 변경되었습니다.`);
+    }
+
     function deleteRecord(recordId, event) {
       if (event) event.stopPropagation();
       const rec = attendanceRecords.find(r => r.id === recordId);
@@ -1053,7 +1259,7 @@
             <td class="py-2 px-1 font-bold text-slate-800">${shortDate}</td>
             <td class="py-2 px-1 font-black text-slate-900">${rec.student}</td>
             <td class="py-2 px-1 text-slate-600 font-medium">${rec.worker}</td>
-            <td class="py-2 px-1 font-black text-slate-900">${rec.time}</td>
+            <td class="py-2 px-1 font-black text-slate-900">${buildTimeSelects(rec, 'px-1 py-0.5')}</td>
             <td class="py-2 px-1 font-extrabold text-blue-700">${cumulativeStr}</td>
             <td class="py-1 px-1">
               <select onchange="onTablePayTypeDirectChange('${rec.id}', this.value, event)" onclick="event.stopPropagation()"
@@ -1095,7 +1301,7 @@
             <div class="flex justify-between items-center text-xs pt-1 border-t border-slate-100">
               <span class="text-slate-500 font-medium">제공: ${rec.worker}</span>
               <div class="flex items-center gap-2 font-bold">
-                <span class="text-slate-900">당일 ${rec.time}</span>
+                당일 ${buildTimeSelects(rec, 'px-1.5 py-1')}
                 <span class="text-blue-600 font-black">누적 ${cumulativeStr}</span>
               </div>
             </div>
@@ -1586,5 +1792,41 @@
       }
     }
   </script>
+
+  <!-- 날짜 선택 달력 -->
+  <div id="calendarModal" class="hidden fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-black/40" onclick="if(event.target===this)closeCalendar()">
+    <div class="bg-white w-full sm:max-w-sm rounded-t-3xl sm:rounded-3xl p-4 shadow-2xl">
+      <div class="flex items-center justify-between mb-3">
+        <button type="button" onclick="calShift(-1)" class="w-11 h-11 rounded-full text-slate-600 text-2xl">&lsaquo;</button>
+        <div id="calTitle" class="font-bold text-lg text-slate-800"></div>
+        <button type="button" onclick="calShift(1)" class="w-11 h-11 rounded-full text-slate-600 text-2xl">&rsaquo;</button>
+      </div>
+      <div class="grid grid-cols-7 text-center text-xs font-medium mb-1">
+        <div class="text-rose-500">일</div><div class="text-slate-500">월</div><div class="text-slate-500">화</div><div class="text-slate-500">수</div><div class="text-slate-500">목</div><div class="text-slate-500">금</div><div class="text-blue-500">토</div>
+      </div>
+      <div id="calGrid" class="grid grid-cols-7 gap-y-1"></div>
+      <div id="calHolidayList" class="mt-3 text-xs text-slate-600 space-y-0.5"></div>
+      <div class="flex gap-2 mt-3">
+        <button type="button" onclick="calGoToday()" class="flex-1 py-3 rounded-xl text-emerald-600 font-bold text-base">오늘</button>
+        <button type="button" onclick="closeCalendar()" class="flex-1 py-3 rounded-xl text-slate-600 font-bold text-base">닫기</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 목록에서 시간 바로 수정 -->
+  <div id="timeEditModal" class="hidden fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-black/40" onclick="if(event.target===this)closeTimeEdit()">
+    <div class="bg-white w-full sm:max-w-sm rounded-t-3xl sm:rounded-3xl p-5 shadow-2xl">
+      <div class="font-black text-lg text-slate-800 mb-1">시간 수정</div>
+      <div id="timeEditTitle" class="text-sm text-slate-500 font-medium mb-4"></div>
+      <div class="grid grid-cols-2 gap-3 mb-4">
+        <select id="timeEditHours" class="w-full py-3 px-3 rounded-xl border-2 border-slate-200 bg-slate-50 text-center text-xl font-black text-slate-900 outline-none"></select>
+        <select id="timeEditMinutes" class="w-full py-3 px-3 rounded-xl border-2 border-slate-200 bg-slate-50 text-center text-xl font-black text-slate-900 outline-none"></select>
+      </div>
+      <div class="flex gap-2">
+        <button type="button" onclick="closeTimeEdit()" class="flex-1 py-3 rounded-xl bg-slate-100 text-slate-600 font-bold text-base">취소</button>
+        <button type="button" onclick="saveTimeEdit()" class="flex-1 py-3 rounded-xl bg-blue-600 text-white font-black text-base">저장</button>
+      </div>
+    </div>
+  </div>
 </body>
 </html>
