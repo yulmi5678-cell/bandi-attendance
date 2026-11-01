@@ -1298,11 +1298,10 @@
                 </button>
               </div>
             </div>
-            <div class="flex justify-between items-center text-xs pt-1 border-t border-slate-100">
-              <span class="text-slate-500 font-medium">제공: ${rec.worker}</span>
-              <div class="flex items-center gap-2 font-bold">
-                당일 ${buildTimeSelects(rec, 'px-1.5 py-1')}
-                <span class="text-blue-600 font-black">누적 ${cumulativeStr}</span>
+            <div class="flex justify-between items-center text-xs pt-1 border-t border-slate-100 gap-2">
+              <span class="text-slate-500 font-medium whitespace-nowrap"><i class="fa-solid fa-user text-[10px] text-slate-400"></i> ${rec.worker}</span>
+              <div class="flex items-center gap-2 font-bold whitespace-nowrap">
+                ${buildTimeSelects(rec, 'px-1.5 py-1')}
               </div>
             </div>
           `;
